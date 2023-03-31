@@ -78,7 +78,7 @@ for bagFile in listOfBagFiles:
 
 	for topicName in listOfTopics:
 		#Create a new CSV file for each topic
-		filename = folder + '/' + str.replace(topicName, '/', '_slash_') + '.csv'
+		filename = folder + '/' + bagName[:-4] + str.replace(topicName, '/', '_slash_') + '.csv'
 		with open(filename, 'w+') as csvfile:
 			filewriter = csv.writer(csvfile, delimiter = ',')
 			firstIteration = True	#allows header row

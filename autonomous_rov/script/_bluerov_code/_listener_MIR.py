@@ -56,7 +56,6 @@ Vmin_mot = 1100
 ## my code ##
 cum_error_yaw = 0
 cum_error_z = 0
-t0 = 0
 #############
 
 # Linear/angular velocity 
@@ -169,6 +168,10 @@ def OdoCallback(data):
 	global p
 	global q
 	global r
+	## my code ##
+	global cum_error_yaw
+	#############
+
 
 	orientation = data.orientation
 	angular_velocity = data.angular_velocity
@@ -213,10 +216,20 @@ def OdoCallback(data):
 	if (set_mode[0]):
 		return
 
+	## my code ##
 	# Send PWM commands to motors
+	# not sure about target ...
+	yaw_des =  -cmd_vel.angular.z
+	t_z = pControlYaw(yaw_des, angle.angular.z)
+
+	# PI control
+	# t_z, cum_error_yaw = piControlYaw(yaw_des, angle.angular.z, cum_error_yaw) 
+	
+	Correction_yaw = force2PWM(t_z)
+	#############
+	Correction_yaw = int(Correction_yaw)
 	# yaw command to be adapted using sensor feedback	
-	# Correction_yaw = 1500 
-	# setOverrideRCIN(1500, 1500, 1500, Correction_yaw, 1500, 1500)
+	setOverrideRCIN(1500, 1500, 1500, Correction_yaw, 1500, 1500)
 
 
 def DvlCallback(data):
@@ -239,15 +252,11 @@ def PressureCallback(data):
 	global depth_p0
 	global depth_wrt_startup
 	global init_p0
-
-	## my code ##
-	global cum_error_yaw
-	global cum_error_z
-	global t0
-	#############
-
 	rho = 1000.0 # 1025.0 for sea water
 	g = 9.80665
+	## my code ##
+	global cum_error_z
+	#############
 
 	# Only continue if manual_mode is disabled
 	if (set_mode[0]):
@@ -264,56 +273,37 @@ def PressureCallback(data):
 		# 1st execution, init
 		depth_p0 = (pressure - 101300)/(rho*g)
 		init_p0 = False
-		## my code ##
-		t0 = time.time()
-		#############
 
 	depth_wrt_startup = (pressure - 101300)/(rho*g) - depth_p0
 
 	# setup depth servo control here
 	# ...
+
+	## my code ##
+	# not sure about destination ...
+	z_des = cmd_vel.linear.z
+	# floatability = ...
+
+	f_z = pControlDepth(z_des, depth_wrt_startup)
+	# f_z = pControlwFloatability(z_des, depth_wrt_startup, floatability)
+	
+	# PI control
+	# f_z, cum_error_z = pControlDepth(z_des, depth_wrt_startup, cum_error_z)
+
 	# update Correction_depth
-	
-	floatability = 1*9.8
-	
-	# Day 1
-	# -- for task 2
+	Correction_depth = force2PWM(f_z)	
+	#############
+
 	# Send PWM commands to motors
-	# Correction_depth = int(force2PWM(1.5/4))
-	# setOverrideRCIN(1500, 1500, Correction_depth, 1500, 1500, 1500)
-	
-	# -- for task 4
-	# yaw_des = 90
-	# yaw = angle_wrt_startup[2]
-	# t_z = pControlYaw(yaw_des, yaw)
-	# Correction_yaw = int(force2PWM(t_z/4))
-	# setOverrideRCIN(1500, 1500, 1500, Correction_yaw, 1500, 1500)
-
-	# -- for task 5
-	# z_des = 0.8
-	# z = depth_wrt_startup
-	# f_z = pControlDepth(z_des, z)
-	# Correction_depth = int(force2PWM(f_z/4))
-	# setOverrideRCIN(1500, 1500, Correction_depth, 1500, 1500, 1500)
-
-	# -- for task 6
-	# z_des = 0.8
-	# z = depth_wrt_startup
-	# f_z = pControlwFloatability(z_des, z, floatability)
-	# Correction_depth = int(force2PWM(f_z/4))
-	# setOverrideRCIN(1500, 1500, Correction_depth, 1500, 1500, 1500)
-
-	# Day 2
-	t = t0 - time.time()
-
-
+	Correction_depth = int(Correction_depth)
+	setOverrideRCIN(1500, 1500, Correction_depth, 1500, 1500, 1500)
 
 def mapValueScalSat(value):
 	# Correction_Vel and joy between -1 et 1
 	# scaling for publishing with setOverrideRCIN values between 1100 and 1900
 	# neutral point is 1500
 	pulse_width = value * 400 + 1500
-
+	
 	# Saturation
 	if pulse_width > 1900:
 		pulse_width = 1900
@@ -328,6 +318,7 @@ def setOverrideRCIN(channel_pitch, channel_roll, channel_throttle, channel_yaw, 
 	# It overrides Rc channels inputs and simulates motor controls.
 	# In this case, each channel manages a group of motors not individually as servo set
 
+
 	msg_override = OverrideRCIn()
 	msg_override.channels[0] = np.uint(channel_pitch)       # pulseCmd[4]--> pitch	
 	msg_override.channels[1] = np.uint(channel_roll)        # pulseCmd[3]--> roll
@@ -337,6 +328,7 @@ def setOverrideRCIN(channel_pitch, channel_roll, channel_throttle, channel_yaw, 
 	msg_override.channels[5] = np.uint(channel_lateral)     # pulseCmd[1]--> sway
 	msg_override.channels[6] = 1500
 	msg_override.channels[7] = 1500
+
 
 	pub_msg_override.publish(msg_override)
 
@@ -350,27 +342,24 @@ def subscriber():
 	rospy.Subscriber("distance_sonar", Float64MultiArray, pingerCallback)
 	rospy.spin()
 
+
 ## my code ##
 def pControlYaw(yaw_des, yaw):
-	K_p = 0.5
-	error = yaw_des - yaw
+	K_p = 0.1
+	if math.abs(yaw_des - yaw) <= math.abs(2*math.pi + yaw_des - yaw) 
+		error = yaw_des - yaw
+	else
+		error = 2*math.pi*yaw_des - yaw
 
-	# if abs(yaw_des - yaw) <= abs(2*math.pi + yaw_des - yaw):
-	# 	error = yaw_des - yaw
-	# else:
-	# 	error = 2*math.pi*yaw_des - yaw
-
-	return K_p*error
+	return K_p*(yaw_des - yaw)
 
 def piControlYaw(yaw_des, yaw, cum_error):
 	K_p = 1
 	K_i = 0.01
-	error = yaw_des - yaw
-
-	# if math.abs(yaw_des - yaw) <= math.abs(2*math.pi + yaw_des - yaw):
-	# 	error = yaw_des - yaw
-	# else:
-	# 	error = 2*math.pi*yaw_des - yaw
+	if math.abs(yaw_des - yaw) <= math.abs(2*math.pi + yaw_des - yaw) 
+		error = yaw_des - yaw
+	else
+		error = 2*math.pi*yaw_des - yaw
 	
 	t_z = K_p*error + K_i*cum_error
 	cum_error += error
@@ -397,26 +386,15 @@ def piControlwFloatability(z_des, z, floatability, cum_error):
 
 	return f_z, cum_error
 
-def cubicPoly(t, z_init, z_final, t_final):
-    a_2 = 3*(z_final - z_init)/t_final**2
-    a_3 = -2*(z_final - z_init)/t_final**3
-    z_d = z_init + a_2*t**2 + a_3*t**3
-    zdot_d = z_init + 2*a_2*t + 3*a_3*t**2
-    if t > t_final:
-        zdot_d = 0
-    return z_d, zdot_d
-
 def force2PWM(f):	
 	if f == 0:
 		return 1500
 	elif f > 0:
-		# return 9.446748332601718*f + 1568.1841920414354
-		return 9.446748332601718*f + 1536
+		return 6.792 + 1563.892*f
 	else:
-		# return 12.110367224497901*f + 1433.6772068472724
-		return 12.110367224497901*f + 1464
-
+		return 8.725 + 1437.511*f 
 #############
+
 
 if __name__ == '__main__':
 	armDisarm(False)  # Not automatically disarmed at startup

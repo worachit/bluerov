@@ -53,11 +53,6 @@ pinger_distance = 0
 Vmax_mot = 1900
 Vmin_mot = 1100
 
-## my code ##
-cum_error_yaw = 0
-cum_error_z = 0
-#############
-
 # Linear/angular velocity 
 u = 0               # linear surge velocity 
 v = 0               # linear sway velocity
@@ -168,10 +163,6 @@ def OdoCallback(data):
 	global p
 	global q
 	global r
-	## my code ##
-	global cum_error_yaw
-	#############
-
 
 	orientation = data.orientation
 	angular_velocity = data.angular_velocity
@@ -216,19 +207,9 @@ def OdoCallback(data):
 	if (set_mode[0]):
 		return
 
-	## my code ##
 	# Send PWM commands to motors
-	# not sure about target (angle_roll_a0)
-	yaw_des =  angle_roll_a0
-	t_z = pControlYaw(yaw_des, angle.angular.z)
-
-	# PI control
-	# t_z, cum_error_yaw = piControlYaw(yaw_des, angle.angular.z, cum_error_yaw) 
-	
-	Correction_yaw = force2PWM(t_z)
-	#############
-	Correction_yaw = int(Correction_yaw)
 	# yaw command to be adapted using sensor feedback	
+	Correction_yaw = 1500 
 	setOverrideRCIN(1500, 1500, 1500, Correction_yaw, 1500, 1500)
 
 
@@ -254,9 +235,6 @@ def PressureCallback(data):
 	global init_p0
 	rho = 1000.0 # 1025.0 for sea water
 	g = 9.80665
-	## my code ##
-	global cum_error_z
-	#############
 
 	# Only continue if manual_mode is disabled
 	if (set_mode[0]):
@@ -279,21 +257,8 @@ def PressureCallback(data):
 	# setup depth servo control here
 	# ...
 
-	## my code ##
-	# not sure about destination 
-	z_des = depth_p0
-	# floatability = ...
-
-	f_z = pControlDepth(z_des, depth_wrt_startup)
-	# f_z = pControlwFloatability(z_des, depth_wrt_startup, floatability)
-	
-	# PI control
-	f_z, cum_error_z = pControlDepth(z_des, depth_wrt_startup, cum_error_z)
-
 	# update Correction_depth
-	Correction_depth = force2PWM(f_z)	
-	#############
-
+	Correction_depth = 1500	
 	# Send PWM commands to motors
 	Correction_depth = int(Correction_depth)
 	setOverrideRCIN(1500, 1500, Correction_depth, 1500, 1500, 1500)
@@ -303,7 +268,7 @@ def mapValueScalSat(value):
 	# scaling for publishing with setOverrideRCIN values between 1100 and 1900
 	# neutral point is 1500
 	pulse_width = value * 400 + 1500
-	
+
 	# Saturation
 	if pulse_width > 1900:
 		pulse_width = 1900
@@ -318,7 +283,6 @@ def setOverrideRCIN(channel_pitch, channel_roll, channel_throttle, channel_yaw, 
 	# It overrides Rc channels inputs and simulates motor controls.
 	# In this case, each channel manages a group of motors not individually as servo set
 
-
 	msg_override = OverrideRCIn()
 	msg_override.channels[0] = np.uint(channel_pitch)       # pulseCmd[4]--> pitch	
 	msg_override.channels[1] = np.uint(channel_roll)        # pulseCmd[3]--> roll
@@ -328,7 +292,6 @@ def setOverrideRCIN(channel_pitch, channel_roll, channel_throttle, channel_yaw, 
 	msg_override.channels[5] = np.uint(channel_lateral)     # pulseCmd[1]--> sway
 	msg_override.channels[6] = 1500
 	msg_override.channels[7] = 1500
-
 
 	pub_msg_override.publish(msg_override)
 
@@ -341,60 +304,6 @@ def subscriber():
 	#rospy.Subscriber("/dvl/data", DVL, DvlCallback)
 	rospy.Subscriber("distance_sonar", Float64MultiArray, pingerCallback)
 	rospy.spin()
-
-
-## my code ##
-def pControlYaw(yaw_des, yaw):
-	K_p = 1
-	if math.abs(yaw_des - yaw) <= math.abs(2*math.pi + yaw_des - yaw) 
-		error = yaw_des - yaw
-	else
-		error = 2*math.pi*yaw_des - yaw
-
-	return K_p*(yaw_des - yaw)
-
-def piControlYaw(yaw_des, yaw, cum_error):
-	K_p = 1
-	K_i = 0.01
-	if math.abs(yaw_des - yaw) <= math.abs(2*math.pi + yaw_des - yaw) 
-		error = yaw_des - yaw
-	else
-		error = 2*math.pi*yaw_des - yaw
-	
-	t_z = K_p*error + K_i*cum_error
-	cum_error += error
-
-	return t_z, cum_error
-
-def pControlDepth(z_des, z):
-	K_p = 1
-	f_z = K_p*(z_des - z)
-	return f_z
-
-def pControlwFloatability(z_des, z, floatability):
-	K_p = 1
-	f_z = K_p*(z_des - z) + floatability
-	return f_z
-
-def piControlwFloatability(z_des, z, floatability, cum_error):
-	K_p = 1
-	K_i = 0.01
-	error = z_des - z
-
-	f_z = K_p*error + K_i*cum_error + floatability
-	cum_error += error
-
-	return f_z, cum_error
-
-def force2PWM(f):	
-	if f == 0:
-		return 1500
-	elif f > 0:
-		return 6.792 + 1563.892*f
-	else:
-		return 8.725 + 1437.511*f 
-#############
-
 
 if __name__ == '__main__':
 	armDisarm(False)  # Not automatically disarmed at startup
