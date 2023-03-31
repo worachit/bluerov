@@ -266,15 +266,20 @@ def PressureCallback(data):
 		init_p0 = False
 		## my code ##
 		t0 = time.time()
+		cum_error_yaw = 0
+		cum_error_z = 0
 		#############
 
 	depth_wrt_startup = (pressure - 101300)/(rho*g) - depth_p0
+	pub_depth.publish(depth_wrt_startup)
 
 	# setup depth servo control here
 	# ...
 	# update Correction_depth
-	
-	floatability = 1*9.8
+
+	################################################################################
+
+	floatability = 2.1*9.8
 	
 	# Day 1
 	# -- for task 2
@@ -290,22 +295,66 @@ def PressureCallback(data):
 	# setOverrideRCIN(1500, 1500, 1500, Correction_yaw, 1500, 1500)
 
 	# -- for task 5
-	# z_des = 0.8
+	# z_des = 0.4
 	# z = depth_wrt_startup
 	# f_z = pControlDepth(z_des, z)
 	# Correction_depth = int(force2PWM(f_z/4))
 	# setOverrideRCIN(1500, 1500, Correction_depth, 1500, 1500, 1500)
 
 	# -- for task 6
-	# z_des = 0.8
+	# z_des = 0.4
 	# z = depth_wrt_startup
 	# f_z = pControlwFloatability(z_des, z, floatability)
 	# Correction_depth = int(force2PWM(f_z/4))
 	# setOverrideRCIN(1500, 1500, Correction_depth, 1500, 1500, 1500)
 
-	# Day 2
-	t = t0 - time.time()
+	################################################################################
 
+	# Day 2
+	# -- for task 2
+	# t = time.time() - t0
+	# z_init = 0
+	# z_final= 0.4
+	# T_final = 20
+	# z_des, _ = cubicPoly(t, z_init, z_final, T_final)
+	# z = depth_wrt_startup
+	# f_z = pControlwFloatability(z_des, z, floatability)
+	# Correction_depth = int(force2PWM(f_z/4))
+	# setOverrideRCIN(1500, 1500, Correction_depth, 1500, 1500, 1500)
+
+	# -- for task 3
+	# t = time.time() - t0 
+	# z_init = 0
+	# z_final= 0.4
+	# T_final = 20
+	# z_des, _ = cubicPoly(t, z_init, z_final, T_final)
+	# z = depth_wrt_startup
+	# f_z, cum_error_z = piControlwFloatability(z_des, z, floatability, cum_error_z)
+	# Correction_depth = int(force2PWM(f_z/4))
+	# setOverrideRCIN(1500, 1500, Correction_depth, 1500, 1500, 1500)
+
+	# -- for task 5
+	# t = time.time() - t0 
+	# yaw_init = 0
+	# yaw_final= 90
+	# T_final = 10
+	# yaw_des, _ = cubicPoly(t, yaw_init, yaw_final, T_final)
+	# yaw = angle_wrt_startup[2]
+	# t_z, cum_error_yaw = piControlYaw(yaw_des, yaw, cum_error_yaw)
+	# Correction_yaw = int(force2PWM(t_z/4))
+	# setOverrideRCIN(1500, 1500, 1500, Correction_yaw, 1500, 1500)
+
+	# -- for task 6
+	t = time.time() - t0 
+	z_init = 0
+	z_final= 0.4
+	T_final = 20
+	z_des, _ = cubicPoly(t, z_init, z_final, T_final)
+	z = depth_wrt_startup
+	f_z, cum_error_z = alphaBeta(z_des, z, floatability, cum_error_z)
+	Correction_depth = int(force2PWM(f_z/4))
+	setOverrideRCIN(1500, 1500, Correction_depth, 1500, 1500, 1500)
+	################################################################################
 
 
 def mapValueScalSat(value):
@@ -352,7 +401,7 @@ def subscriber():
 
 ## my code ##
 def pControlYaw(yaw_des, yaw):
-	K_p = 0.5
+	K_p = 0.01
 	error = yaw_des - yaw
 
 	# if abs(yaw_des - yaw) <= abs(2*math.pi + yaw_des - yaw):
@@ -363,9 +412,10 @@ def pControlYaw(yaw_des, yaw):
 	return K_p*error
 
 def piControlYaw(yaw_des, yaw, cum_error):
-	K_p = 1
-	K_i = 0.01
+	K_p = 0.01
+	K_i = 0.001
 	error = yaw_des - yaw
+	sampling_period = 0.016
 
 	# if math.abs(yaw_des - yaw) <= math.abs(2*math.pi + yaw_des - yaw):
 	# 	error = yaw_des - yaw
@@ -373,27 +423,28 @@ def piControlYaw(yaw_des, yaw, cum_error):
 	# 	error = 2*math.pi*yaw_des - yaw
 	
 	t_z = K_p*error + K_i*cum_error
-	cum_error += error
+	cum_error += error*sampling_period
 
 	return t_z, cum_error
 
 def pControlDepth(z_des, z):
-	K_p = 1
+	K_p = 50
 	f_z = K_p*(z_des - z)
 	return f_z
 
 def pControlwFloatability(z_des, z, floatability):
-	K_p = 1
+	K_p = 6
 	f_z = K_p*(z_des - z) + floatability
 	return f_z
 
 def piControlwFloatability(z_des, z, floatability, cum_error):
-	K_p = 1
+	K_p = 5
 	K_i = 0.01
+	sampling_period = 0.016
 	error = z_des - z
 
 	f_z = K_p*error + K_i*cum_error + floatability
-	cum_error += error
+	cum_error += error*sampling_period
 
 	return f_z, cum_error
 
@@ -404,7 +455,31 @@ def cubicPoly(t, z_init, z_final, t_final):
     zdot_d = z_init + 2*a_2*t + 3*a_3*t**2
     if t > t_final:
         zdot_d = 0
+        z_d = z_init + a_2*t_final**2 + a_3*t_final**3
+        
     return z_d, zdot_d
+
+def alphaBeta(z_des, z, floatability, last_error, last_f_z):
+	# # Initialize variables
+	# w = 0  # Initial heave estimate
+	# last_w = 0  # Last heave estimate
+	# last_error = 0  # Last measurement error
+	alpha = 0.45  # Alpha parameter
+	beta = 0.1  # Beta parameter
+
+    # Compute error between measurement and last estimate
+	error = z_des - z
+    
+    # Update heave estimate using alpha-beta filter
+	f_z = last_f_z + alpha * error + beta * (error - last_error)
+    
+    # Update variables for next iteration
+	last_f_z = f_z
+	last_error = error
+    
+    # Use the new heave estimate w for further computations
+    # do_something_with(w)
+	return f_z, last_error, last_f_z
 
 def force2PWM(f):	
 	if f == 0:
@@ -423,7 +498,7 @@ if __name__ == '__main__':
 	rospy.init_node('autonomous_MIR', anonymous=False)
 	pub_msg_override = rospy.Publisher("mavros/rc/override", OverrideRCIn, queue_size = 10, tcp_nodelay = True)
 	pub_angle_degre = rospy.Publisher('angle_degree', Twist, queue_size = 10, tcp_nodelay = True)
-	pub_depth = rospy.Publisher('depth/state', Float64, queue_size = 10, tcp_nodelay = True)
+	pub_depth = rospy.Publisher('depth', Float64, queue_size = 10, tcp_nodelay = True)
 
 	pub_angular_velocity = rospy.Publisher('angular_velocity', Twist, queue_size = 10, tcp_nodelay = True)
 	pub_linear_velocity = rospy.Publisher('linear_velocity', Twist, queue_size = 10, tcp_nodelay = True)
